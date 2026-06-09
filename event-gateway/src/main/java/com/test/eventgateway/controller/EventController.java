@@ -6,6 +6,7 @@ import com.test.eventgateway.service.EventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.sql.DataSource;
+import java.lang.management.ManagementFactory;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,6 +28,10 @@ import java.util.Map;
 public class EventController {
 
     private final EventService eventService;
+    private final DataSource dataSource;
+
+    @Value("${spring.application.name}")
+    private String serviceName;
 
     @PostMapping("/events")
     public ResponseEntity<EventResponse> submitEvent(@Valid @RequestBody EventRequest request) {
@@ -49,10 +57,24 @@ public class EventController {
     }
 
     @GetMapping("/health")
-    public ResponseEntity<Map<String, String>> health() {
-        return ResponseEntity.ok(Map.of(
-                "status", "UP",
-                "service", "event-gateway"
-        ));
+    public ResponseEntity<Map<String, Object>> health() {
+        var body = new LinkedHashMap<String, Object>();
+        body.put("status", "UP");
+        body.put("service", serviceName);
+        body.put("uptime", ManagementFactory.getRuntimeMXBean().getUptime() + "ms");
+
+        try (var conn = dataSource.getConnection()) {
+            body.put("database", Map.of(
+                    "status", "UP",
+                    "product", conn.getMetaData().getDatabaseProductName(),
+                    "url", conn.getMetaData().getURL()
+            ));
+        } catch (Exception e) {
+            body.put("status", "DOWN");
+            body.put("database", Map.of("status", "DOWN", "error", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
+
+        return ResponseEntity.ok(body);
     }
 }

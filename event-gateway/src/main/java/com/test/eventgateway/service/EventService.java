@@ -9,6 +9,8 @@ import com.test.eventgateway.model.Event;
 import com.test.eventgateway.model.EventStatus;
 import com.test.eventgateway.model.TransactionType;
 import com.test.eventgateway.repository.EventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,7 @@ public class EventService {
 
     private final EventRepository eventRepository;
     private final AccountServiceClient accountServiceClient;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Processes an incoming event with idempotency.
@@ -33,10 +36,18 @@ public class EventService {
      */
     @Transactional
     public EventResult processEvent(EventRequest request) {
+        Timer.Sample timer = Timer.start(meterRegistry);
+
         // Check for duplicate
         var existing = eventRepository.findById(request.getEventId());
         if (existing.isPresent()) {
             log.info("Duplicate event detected: {}", request.getEventId());
+            meterRegistry.counter("events.processed",
+                    "type", existing.get().getType().name(),
+                    "status", "DUPLICATE").increment();
+            timer.stop(Timer.builder("events.processing.time")
+                    .tag("outcome", "duplicate")
+                    .register(meterRegistry));
             return new EventResult(toResponse(existing.get()), true);
         }
 
@@ -55,7 +66,7 @@ public class EventService {
 
         eventRepository.save(event);
 
-        // Call Account Service — gracefully handle failures
+        // Call Account Service -- gracefully handle failures
         boolean applied = accountServiceClient.applyTransaction(
                 event.getAccountId(),
                 event.getEventId(),
@@ -67,6 +78,13 @@ public class EventService {
 
         event.setStatus(applied ? EventStatus.ACCEPTED : EventStatus.FAILED);
         eventRepository.save(event);
+
+        meterRegistry.counter("events.processed",
+                "type", event.getType().name(),
+                "status", event.getStatus().name()).increment();
+        timer.stop(Timer.builder("events.processing.time")
+                .tag("outcome", event.getStatus().name().toLowerCase())
+                .register(meterRegistry));
 
         return new EventResult(toResponse(event), false);
     }

@@ -3,6 +3,7 @@ package com.test.eventgateway.service;
 import com.test.eventgateway.client.AccountServiceClient;
 import com.test.eventgateway.dto.EventRequest;
 import com.test.eventgateway.dto.EventResponse;
+import com.test.eventgateway.exception.AccountServiceUnavailableException;
 import com.test.eventgateway.exception.DuplicateEventException;
 import com.test.eventgateway.exception.EventNotFoundException;
 import com.test.eventgateway.model.Event;
@@ -48,7 +49,7 @@ public class EventService {
             timer.stop(Timer.builder("events.processing.time")
                     .tag("outcome", "duplicate")
                     .register(meterRegistry));
-            return new EventResult(toResponse(existing.get()), true);
+            return new EventResult(toResponse(existing.get()), true, false);
         }
 
         Instant timestamp = parseTimestamp(request.getEventTimestamp());
@@ -66,17 +67,25 @@ public class EventService {
 
         eventRepository.save(event);
 
-        // Call Account Service -- gracefully handle failures
-        boolean applied = accountServiceClient.applyTransaction(
-                event.getAccountId(),
-                event.getEventId(),
-                event.getType().name(),
-                event.getAmount(),
-                event.getCurrency(),
-                request.getEventTimestamp()
-        );
+        // Call Account Service -- save as FAILED if unreachable
+        boolean serviceUnavailable = false;
+        try {
+            accountServiceClient.applyTransaction(
+                    event.getAccountId(),
+                    event.getEventId(),
+                    event.getType().name(),
+                    event.getAmount(),
+                    event.getCurrency(),
+                    request.getEventTimestamp()
+            );
+            event.setStatus(EventStatus.ACCEPTED);
+        } catch (AccountServiceUnavailableException e) {
+            log.warn("Account Service unavailable for event {}: {}",
+                    event.getEventId(), e.getMessage());
+            event.setStatus(EventStatus.FAILED);
+            serviceUnavailable = true;
+        }
 
-        event.setStatus(applied ? EventStatus.ACCEPTED : EventStatus.FAILED);
         eventRepository.save(event);
 
         meterRegistry.counter("events.processed",
@@ -86,7 +95,7 @@ public class EventService {
                 .tag("outcome", event.getStatus().name().toLowerCase())
                 .register(meterRegistry));
 
-        return new EventResult(toResponse(event), false);
+        return new EventResult(toResponse(event), false, serviceUnavailable);
     }
 
     public EventResponse getEvent(String eventId) {
@@ -128,5 +137,6 @@ public class EventService {
     /**
      * Wraps the response with a flag indicating if this was a duplicate.
      */
-    public record EventResult(EventResponse response, boolean duplicate) {}
+    public record EventResult(EventResponse response, boolean duplicate,
+                               boolean serviceUnavailable) {}
 }

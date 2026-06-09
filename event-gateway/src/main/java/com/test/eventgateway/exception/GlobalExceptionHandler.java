@@ -35,6 +35,14 @@ public class GlobalExceptionHandler {
                 .body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage(), null));
     }
 
+    @ExceptionHandler(AccountServiceUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleServiceUnavailable(
+            AccountServiceUnavailableException ex) {
+        log.warn("Account Service unavailable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(errorBody(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), null));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException ex) {
         return ResponseEntity.badRequest()

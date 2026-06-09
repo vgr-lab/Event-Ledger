@@ -1,5 +1,6 @@
 package com.test.eventgateway.client;
 
+import com.test.eventgateway.exception.AccountServiceUnavailableException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -24,10 +25,8 @@ import java.util.function.Supplier;
  * Resilience stack (outermost to innermost):
  *   CircuitBreaker -> Retry -> HTTP call (with timeout)
  *
- * - Timeout: connection 2s, read 5s (via RestClient request factory)
- * - Retry: up to 3 attempts with exponential backoff (500ms, 1s)
- * - Circuit Breaker: opens after 50% failure rate over 10 calls,
- *   stays open 30s, then probes with 3 half-open calls
+ * Throws {@link AccountServiceUnavailableException} when the service
+ * is unreachable (circuit open, retries exhausted, or timeout).
  */
 @Component
 @Slf4j
@@ -68,38 +67,63 @@ public class AccountServiceClient {
     /**
      * Applies a transaction to an account via the Account Service.
      *
-     * @return true if the transaction was applied successfully
+     * @throws AccountServiceUnavailableException if the service is unreachable
      */
-    public boolean applyTransaction(String accountId, String transactionId,
-                                     String type, BigDecimal amount,
-                                     String currency, String eventTimestamp) {
-        Supplier<Boolean> call = () -> executeCall(
-                accountId, transactionId, type, amount, currency, eventTimestamp);
+    public void applyTransaction(String accountId, String transactionId,
+                                  String type, BigDecimal amount,
+                                  String currency, String eventTimestamp) {
+        Supplier<Void> call = () -> {
+            executeTransaction(accountId, transactionId, type, amount, currency, eventTimestamp);
+            return null;
+        };
 
-        // Decoration order: CircuitBreaker( Retry( call ) )
-        Supplier<Boolean> resilientCall = CircuitBreaker.decorateSupplier(
+        Supplier<Void> resilientCall = CircuitBreaker.decorateSupplier(
+                circuitBreaker,
+                Retry.decorateSupplier(retry, call));
+
+        try {
+            resilientCall.get();
+        } catch (CallNotPermittedException e) {
+            throw new AccountServiceUnavailableException(
+                    "Circuit breaker OPEN -- Account Service is unavailable", e);
+        } catch (AccountServiceUnavailableException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AccountServiceUnavailableException(
+                    "Account Service unreachable after retries: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Fetches the balance for an account from the Account Service.
+     *
+     * @throws AccountServiceUnavailableException if the service is unreachable
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getBalance(String accountId) {
+        Supplier<Map<String, Object>> call = () -> restClient.get()
+                .uri("/accounts/{accountId}/balance", accountId)
+                .retrieve()
+                .body(Map.class);
+
+        Supplier<Map<String, Object>> resilientCall = CircuitBreaker.decorateSupplier(
                 circuitBreaker,
                 Retry.decorateSupplier(retry, call));
 
         try {
             return resilientCall.get();
         } catch (CallNotPermittedException e) {
-            log.warn("Circuit OPEN -- account service call rejected for transaction {}", transactionId);
-            return false;
+            throw new AccountServiceUnavailableException(
+                    "Circuit breaker OPEN -- Account Service is unavailable", e);
         } catch (Exception e) {
-            log.error("All retries exhausted for transaction {} to account {}: {}",
-                    transactionId, accountId, e.getMessage());
-            return false;
+            throw new AccountServiceUnavailableException(
+                    "Account Service unreachable: " + e.getMessage(), e);
         }
     }
 
-    /**
-     * Raw HTTP call -- no resilience wrappers.
-     * Exceptions propagate to Retry/CircuitBreaker for proper handling.
-     */
-    private boolean executeCall(String accountId, String transactionId,
-                                String type, BigDecimal amount,
-                                String currency, String eventTimestamp) {
+    private void executeTransaction(String accountId, String transactionId,
+                                     String type, BigDecimal amount,
+                                     String currency, String eventTimestamp) {
         var body = Map.of(
                 "transactionId", transactionId,
                 "type", type,
@@ -115,6 +139,5 @@ public class AccountServiceClient {
                 .toBodilessEntity();
 
         log.info("Transaction {} applied to account {}", transactionId, accountId);
-        return true;
     }
 }

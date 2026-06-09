@@ -8,6 +8,7 @@ import com.test.accountservice.service.AccountManager;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.sql.DataSource;
+import java.lang.management.ManagementFactory;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -24,6 +28,10 @@ import java.util.Map;
 public class AccountController {
 
     private final AccountManager accountManager;
+    private final DataSource dataSource;
+
+    @Value("${spring.application.name}")
+    private String serviceName;
 
     @PostMapping("/accounts/{accountId}/transactions")
     public ResponseEntity<TransactionResponse> applyTransaction(
@@ -48,10 +56,24 @@ public class AccountController {
     }
 
     @GetMapping("/health")
-    public ResponseEntity<Map<String, String>> health() {
-        return ResponseEntity.ok(Map.of(
-                "status", "UP",
-                "service", "account-service"
-        ));
+    public ResponseEntity<Map<String, Object>> health() {
+        var body = new LinkedHashMap<String, Object>();
+        body.put("status", "UP");
+        body.put("service", serviceName);
+        body.put("uptime", ManagementFactory.getRuntimeMXBean().getUptime() + "ms");
+
+        try (var conn = dataSource.getConnection()) {
+            body.put("database", Map.of(
+                    "status", "UP",
+                    "product", conn.getMetaData().getDatabaseProductName(),
+                    "url", conn.getMetaData().getURL()
+            ));
+        } catch (Exception e) {
+            body.put("status", "DOWN");
+            body.put("database", Map.of("status", "DOWN", "error", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
+
+        return ResponseEntity.ok(body);
     }
 }

@@ -1,4 +1,4 @@
-# Financial Event System
+# Event Ledger
 
 Two microservices for processing financial transaction events with idempotency, out-of-order tolerance, and observability.
 

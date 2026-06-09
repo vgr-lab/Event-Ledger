@@ -11,6 +11,8 @@ import com.test.accountservice.model.Transaction;
 import com.test.accountservice.model.TransactionType;
 import com.test.accountservice.repository.AccountRepository;
 import com.test.accountservice.repository.TransactionRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ public class AccountManager {
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Applies a transaction to an account with idempotency.
@@ -33,10 +36,18 @@ public class AccountManager {
      */
     @Transactional
     public TransactionResult applyTransaction(String accountId, TransactionRequest request) {
+        Timer.Sample timer = Timer.start(meterRegistry);
+
         // Idempotency check
         var existing = transactionRepository.findByTransactionId(request.getTransactionId());
         if (existing.isPresent()) {
             log.info("Duplicate transaction detected: {}", request.getTransactionId());
+            meterRegistry.counter("transactions.processed",
+                    "type", existing.get().getType().name(),
+                    "status", "DUPLICATE").increment();
+            timer.stop(Timer.builder("transactions.processing.time")
+                    .tag("outcome", "duplicate")
+                    .register(meterRegistry));
             return new TransactionResult(toResponse(existing.get()), true);
         }
 
@@ -69,6 +80,13 @@ public class AccountManager {
         log.info("Transaction {} applied to account {}: {} {}",
                 request.getTransactionId(), accountId,
                 request.getType(), request.getAmount());
+
+        meterRegistry.counter("transactions.processed",
+                "type", request.getType(),
+                "status", "APPLIED").increment();
+        timer.stop(Timer.builder("transactions.processing.time")
+                .tag("outcome", "applied")
+                .register(meterRegistry));
 
         return new TransactionResult(toResponse(transaction), false);
     }

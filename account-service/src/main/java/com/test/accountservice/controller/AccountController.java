@@ -7,6 +7,7 @@ import com.test.accountservice.dto.TransactionResponse;
 import com.test.accountservice.service.AccountManager;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 public class AccountController {
 
     private final AccountManager accountManager;
@@ -27,8 +29,10 @@ public class AccountController {
     public ResponseEntity<TransactionResponse> applyTransaction(
             @PathVariable String accountId,
             @Valid @RequestBody TransactionRequest request) {
+        log.info("Received transaction {} for account {}", request.getTransactionId(), accountId);
         var result = accountManager.applyTransaction(accountId, request);
         HttpStatus status = result.duplicate() ? HttpStatus.OK : HttpStatus.CREATED;
+        log.info("Transaction {} applied — duplicate={}", request.getTransactionId(), result.duplicate());
         return ResponseEntity.status(status).body(result.response());
     }
 

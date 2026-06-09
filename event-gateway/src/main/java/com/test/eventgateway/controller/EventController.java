@@ -5,6 +5,7 @@ import com.test.eventgateway.dto.EventResponse;
 import com.test.eventgateway.service.EventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,16 +20,20 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 public class EventController {
 
     private final EventService eventService;
 
     @PostMapping("/events")
     public ResponseEntity<EventResponse> submitEvent(@Valid @RequestBody EventRequest request) {
+        log.info("Received event {} for account {}", request.getEventId(), request.getAccountId());
         var result = eventService.processEvent(request);
 
         // Duplicate → 200 OK with original event; New → 201 Created
         HttpStatus status = result.duplicate() ? HttpStatus.OK : HttpStatus.CREATED;
+        log.info("Event {} processed — status={}, duplicate={}",
+                request.getEventId(), result.response().getStatus(), result.duplicate());
         return ResponseEntity.status(status).body(result.response());
     }
 

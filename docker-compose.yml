@@ -9,7 +9,7 @@ services:
       - OTEL_SERVICE_NAME=event-gateway
     depends_on:
       account-service:
-        condition: service_started
+        condition: service_healthy
       jaeger:
         condition: service_started
     healthcheck:

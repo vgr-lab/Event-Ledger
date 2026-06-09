@@ -5,7 +5,7 @@ services:
       - "8082:8082"
     environment:
       - ACCOUNT_SERVICE_URL=http://account-service:8081
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://jaeger:4318/v1/traces
       - OTEL_SERVICE_NAME=event-gateway
     depends_on:
       account-service:
@@ -23,7 +23,7 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://jaeger:4318/v1/traces
       - OTEL_SERVICE_NAME=account-service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]

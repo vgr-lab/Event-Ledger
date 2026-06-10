@@ -1,6 +1,7 @@
 package com.test.eventgateway.repository;
 
 import com.test.eventgateway.model.Event;
+import com.test.eventgateway.model.EventStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -10,4 +11,6 @@ import java.util.List;
 public interface EventRepository extends JpaRepository<Event, String> {
 
     List<Event> findByAccountIdOrderByEventTimestampAsc(String accountId);
+
+    List<Event> findByStatusOrderByCreatedAtAsc(EventStatus status);
 }

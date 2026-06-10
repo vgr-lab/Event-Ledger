@@ -202,9 +202,8 @@ class EventGatewayResiliencyTest {
     class CircuitBreakerBehavior {
 
         @Test
-        @DisplayName("Events return 503 when Account Service is down")
-        void returns503WhenDown() {
-            // No WireMock stub -> connection refused
+        @DisplayName("Events return 202 QUEUED when Account Service is down")
+        void returns202WhenDown() {
             wireMock.stubFor(post(urlPathMatching("/accounts/.*/transactions"))
                     .willReturn(aResponse().withStatus(500)));
 
@@ -212,10 +211,9 @@ class EventGatewayResiliencyTest {
             var resp = rest.postForEntity("/events",
                     eventBody(eventId, "acct-down"), Map.class);
 
-            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
             assertThat(resp.getBody())
-                    .containsEntry("status", 503)
-                    .containsEntry("eventStatus", "FAILED")
+                    .containsEntry("status", "QUEUED")
                     .containsKey("message");
         }
 
@@ -243,7 +241,7 @@ class EventGatewayResiliencyTest {
                     eventBody(nextEventId(), "acct-cb"), Map.class);
             long elapsed = System.currentTimeMillis() - start;
 
-            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
             // Fast failure: should be << 1 second (no retries, no network call)
             assertThat(elapsed).isLessThan(1000);
         }

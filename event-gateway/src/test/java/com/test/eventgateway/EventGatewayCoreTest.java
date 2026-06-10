@@ -212,24 +212,43 @@ class EventGatewayCoreTest {
     class GracefulDegradation {
 
         @Test
-        @DisplayName("POST /events returns 503 when Account Service is down")
-        void postReturns503WhenDown() {
+        @DisplayName("POST /events returns 202 QUEUED when Account Service is down")
+        void postReturns202WhenDown() {
             doThrow(new AccountServiceUnavailableException("Service down"))
                     .when(accountServiceClient)
                     .applyTransaction(anyString(), anyString(), anyString(),
                             any(BigDecimal.class), anyString(), anyString());
 
             var resp = rest.postForEntity("/events",
-                    eventBody("evt-503", "acct-503", "CREDIT", 100.0,
+                    eventBody("evt-q1", "acct-q1", "CREDIT", 100.0,
                             "2026-04-01T10:00:00Z"),
                     Map.class);
 
-            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
             assertThat(resp.getBody())
-                    .containsEntry("status", 503)
-                    .containsEntry("eventId", "evt-503")
-                    .containsEntry("eventStatus", "FAILED")
+                    .containsEntry("eventId", "evt-q1")
+                    .containsEntry("status", "QUEUED")
                     .containsKey("message");
+        }
+
+        @Test
+        @DisplayName("QUEUED event is visible via GET /events/{id}")
+        void queuedEventVisibleViaGet() {
+            doThrow(new AccountServiceUnavailableException("Service down"))
+                    .when(accountServiceClient)
+                    .applyTransaction(anyString(), anyString(), anyString(),
+                            any(BigDecimal.class), anyString(), anyString());
+
+            rest.postForEntity("/events",
+                    eventBody("evt-q2", "acct-q2", "CREDIT", 200.0,
+                            "2026-04-02T10:00:00Z"),
+                    Map.class);
+
+            var resp = rest.getForEntity("/events/evt-q2", Map.class);
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resp.getBody())
+                    .containsEntry("eventId", "evt-q2")
+                    .containsEntry("status", "QUEUED");
         }
 
         @Test

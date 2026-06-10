@@ -58,4 +58,8 @@ public class Event {
     @Column(nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
+
+    @Column(nullable = false)
+    @Builder.Default
+    private int retryCount = 0;
 }

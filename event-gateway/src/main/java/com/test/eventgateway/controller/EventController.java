@@ -42,18 +42,16 @@ public class EventController {
         log.info("Received event {} for account {}", request.getEventId(), request.getAccountId());
         var result = eventService.processEvent(request);
 
-        if (result.serviceUnavailable()) {
-            log.warn("Returning 503 for event {} -- Account Service unavailable",
+        if (result.serviceQueued()) {
+            log.info("Event {} queued for deferred processing -- Account Service unavailable",
                     request.getEventId());
             var body = new LinkedHashMap<String, Object>();
-            body.put("timestamp", Instant.now().toString());
-            body.put("status", 503);
-            body.put("error", "Service Unavailable");
-            body.put("message", "Event persisted but Account Service is unreachable. "
-                    + "The transaction has not been applied.");
             body.put("eventId", result.response().getEventId());
-            body.put("eventStatus", result.response().getStatus());
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            body.put("accountId", result.response().getAccountId());
+            body.put("status", result.response().getStatus());
+            body.put("message", "Event accepted for deferred processing. "
+                    + "The Account Service is temporarily unavailable.");
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(body);
         }
 
         HttpStatus status = result.duplicate() ? HttpStatus.OK : HttpStatus.CREATED;

@@ -67,8 +67,8 @@ public class EventService {
 
         eventRepository.save(event);
 
-        // Call Account Service -- save as FAILED if unreachable
-        boolean serviceUnavailable = false;
+        // Call Account Service -- queue for retry if unreachable
+        boolean serviceQueued = false;
         try {
             accountServiceClient.applyTransaction(
                     event.getAccountId(),
@@ -80,10 +80,10 @@ public class EventService {
             );
             event.setStatus(EventStatus.ACCEPTED);
         } catch (AccountServiceUnavailableException e) {
-            log.warn("Account Service unavailable for event {}: {}",
+            log.warn("Account Service unavailable for event {}: {} -- queuing for retry",
                     event.getEventId(), e.getMessage());
-            event.setStatus(EventStatus.FAILED);
-            serviceUnavailable = true;
+            event.setStatus(EventStatus.QUEUED);
+            serviceQueued = true;
         }
 
         eventRepository.save(event);
@@ -95,7 +95,7 @@ public class EventService {
                 .tag("outcome", event.getStatus().name().toLowerCase())
                 .register(meterRegistry));
 
-        return new EventResult(toResponse(event), false, serviceUnavailable);
+        return new EventResult(toResponse(event), false, serviceQueued);
     }
 
     public EventResponse getEvent(String eventId) {
@@ -138,5 +138,5 @@ public class EventService {
      * Wraps the response with a flag indicating if this was a duplicate.
      */
     public record EventResult(EventResponse response, boolean duplicate,
-                               boolean serviceUnavailable) {}
+                               boolean serviceQueued) {}
 }

@@ -5,12 +5,12 @@ services:
       - "8082:8082"
     environment:
       - ACCOUNT_SERVICE_URL=http://account-service:8081
-      - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://jaeger:4318/v1/traces
+      - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://otel-collector:4318/v1/traces
       - OTEL_SERVICE_NAME=event-gateway
     depends_on:
       account-service:
         condition: service_healthy
-      jaeger:
+      otel-collector:
         condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
@@ -23,7 +23,7 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://jaeger:4318/v1/traces
+      - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://otel-collector:4318/v1/traces
       - OTEL_SERVICE_NAME=account-service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
@@ -31,11 +31,21 @@ services:
       timeout: 5s
       retries: 3
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    volumes:
+      - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+      - "8889:8889"     # Prometheus metrics from Collector
+    depends_on:
+      - jaeger
+
   jaeger:
     image: jaegertracing/all-in-one:1.58
     ports:
       - "16686:16686"   # Jaeger UI
-      - "4318:4318"     # OTLP HTTP receiver
     environment:
       - COLLECTOR_OTLP_ENABLED=true
 

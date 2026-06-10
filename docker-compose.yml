@@ -15,7 +15,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 3
 
   account-service:
